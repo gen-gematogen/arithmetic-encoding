@@ -18,11 +18,11 @@ std::vector<double> encode(std::string msg, std::unordered_map<char, double> pro
   double low = 0, high = 1;
   auto cum_prob = to_cum_prob(prob);
 
-  std::cout << "---\n";
-  for (char c = 0; c < 127; ++c){
-    std::cout << c << "  " << prob[c] << " " << cum_prob[c] << "\n";
-  }
-  std::cout << "---\n";
+//  std::cout << "---\n";
+//  for (char c = 0; c < 127; ++c){
+//    std::cout << c << "  " << prob[c] << " " << cum_prob[c] << "\n";
+//  }
+//  std::cout << "---\n";
 
   for (char l: msg){
     double new_low = high * cum_prob[l];
@@ -37,10 +37,12 @@ std::vector<double> encode(std::string msg, std::unordered_map<char, double> pro
 int main(){
   std::unordered_map<char, double> test_prob;
 
-  test_prob[0] = 0.5;
-  test_prob[1] = 0.5;
+  test_prob['a'] = 0.5;
+  test_prob['b'] = 0.5;
 
-  std::string test_msg = std::to_string(char(1));
+  std::string test_msg;
+
+  std::cin >> test_msg;
 
   auto ans = encode(test_msg, test_prob);
 
