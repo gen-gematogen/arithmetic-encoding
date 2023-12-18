@@ -19,50 +19,65 @@ std::unordered_map<char, double> to_cum_prob(std::unordered_map<char, double> &p
   return cum_prob;
 }
 
-std::vector<double> encode(std::string msg, std::unordered_map<char, double> prob){
-  double low = 0, high = 1, w;
+std::pair<std::bitset<N>, int> encode(std::string msg, std::unordered_map<char, double> prob){
+  double min = 0, max = 1, w;
+  std::bitset<N> bin_repr;
+  int k = 0;
   auto cum_prob = to_cum_prob(prob);
 
+  msg += eof;
+  int s = 0;
+
   for (char l: msg){
-    w = high - low;
-    high = low + w * (l < 127 ? cum_prob[l + 1] : 1);
-    low = low + w * cum_prob[l];
+    w = max - min;
+    max = min + w * (l < 127 ? cum_prob[l + 1] : 1);
+    min = min + w * cum_prob[l];
+ 
+    while (max < 0.5 || min > 0.5){
+      if (max < 0.5){
+        min *= 2;
+        max *= 2;
+        
+        bin_repr[k++] = 0;
+        for (int i = 0; i < s; ++i){
+          bin_repr[k++] = 1;
+        }
+        
+        s = 0;
+      } 
+      else{
+        min = 2 * (min - 0.5);
+        max = 2 * (max - 0.5);
+        
+        bin_repr[k++] = 1;
+        for (int i = 0; i < s; ++i){
+          bin_repr[k++] = 0;
+        }
+        
+        s = 0;
+      }
+    }
+
+    while (min > 0.25 && max < 0.75){
+      min = 2 * (min - 0.25);
+      max = 2 * (max - 0.25);
+      s++;
+    }
   }
 
-  w = high - low;
-  high = low + w * (eof < 127 ? cum_prob[eof + 1] : 1);
-  low = low + w * cum_prob[eof];
+  s++;
 
-  return {low, high};
-}
-
-std::pair<std::bitset<N>, int> interval_to_binary(double min, double max){
-  std::bitset<N> bin_repr;
-  double low = 0, high = 1;
-  int k = 0;
-
-  while (low < min || high > max){
-    double m = (high + low) / 2;
-    if (m > max){
-      high = m;
-      bin_repr[k] = 0;
-    } 
-    else if (m < min){
-      low = m;
-      bin_repr[k] = 1;
+  if (min <= 0.25){
+    bin_repr[k++] = 0;
+    for (int i = 0; i < s; ++i){
+      bin_repr[k++] = 1;
     }
-    else{
-      if (m - min < max - m){
-        low = m;
-        bin_repr[k] = 1;
-      }
-      else{
-        high = m;
-        bin_repr[k] = 0;
-      }
+  }
+  else{
+    bin_repr[k++] = 1;
+    for (int i = 0; i < s; ++i){
+      bin_repr[k++] = 0;
     }
-
-    k++;
   }
 
   return {bin_repr, k};
@@ -75,27 +90,36 @@ std::string decode(std::unordered_map<char, double> prob, std::bitset<N> data, i
     value += 1.0 / (1 << i) * data[i - 1];
   }
 
-  std::cout << "value: " << value << "\n";
-
   auto cum_prob = to_cum_prob(prob);
   std::string ans = "";
   bool fl = true;
-  double low = 0, high = 1;
+  // double low = 0, high = 1;
 
+  // for (int i = 0; i < 127; ++i) {
+  //   std::cout << i << " " << (char)i << " " << cum_prob[i] << "\n";
+  // }
+
+  std::cout << "value: " << value << "\n";
+  
   while (fl){
-    double w = high - low;
+    // double w = high - low;
     for (int i = 0; i < 127; ++i){
-      if (low + w * cum_prob[i] <= value &&  value < low + w * cum_prob[i + 1]){
+      //if (low + w * cum_prob[i] <= value &&  value < low + w * cum_prob[i + 1]){
+      if (cum_prob[i] <= value && value < cum_prob[i + 1]){
         ans += (char) i;
-        high = low + w * cum_prob[i + 1];
-        low = low + w * cum_prob[i];
+        // high = low + w * cum_prob[i + 1];
+        //low = low + w * cum_prob[i];
+        value = (value - cum_prob[i]) / prob[i];
 
         if (i == eof){
           fl = false;
         }
+        break;
       }
     }
+    // std::cout << value << " "; 
   }
+  // std::cout << "\n";
 
   return ans;
 }
@@ -106,6 +130,7 @@ int main(){
   for (char c = 'a'; c <= 'z'; ++c){
     test_prob[c] = 0.9 / ('z' - 'a' + 1);
   }
+  // test_prob['a'] = test_prob['b'] = 0.45;
   test_prob[eof] = 0.05;
   test_prob[' '] = 0.05;
 
@@ -115,17 +140,12 @@ int main(){
 
   auto ans = encode(test_msg, test_prob);
 
-  std::cout << ans[0] << " " << ans[1] << "\n";
-  std::flush(std::cout);
-  
-  auto bin = interval_to_binary(ans[0], ans[1]);
-
-  for (int i = 0; i < bin.second; ++i){
-    std::cout << bin.first[i];
+  for (int i = 0; i < ans.second; ++i){
+    std::cout << ans.first[i];
   }
   std::cout << "\n";
 
-  auto dec_s = decode(test_prob, bin.first, bin.second);
+  auto dec_s = decode(test_prob, ans.first, ans.second);
 
   std::cout << dec_s << "\n";
 
