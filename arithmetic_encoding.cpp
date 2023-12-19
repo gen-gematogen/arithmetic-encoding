@@ -1,42 +1,59 @@
 #include <bitset>
-#include <climits>
-#include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
-#include <vector>
+#include <fstream>
 
-const static int N = 100;
+typedef unsigned long long ull;
+
+const static int N = 1000;
 const static char eof = 0;
+const static ull prec = 31;
+const static ull whole = 1 << (prec - 1);
+const static ull half = whole >> 1;
+const static ull quart = whole >> 2;
+const static ull R = 1<<30; 
 
-std::unordered_map<char, double> to_cum_prob(std::unordered_map<char, double> &prob){
-  std::unordered_map<char, double> cum_prob;
+std::unordered_map<char, ull> to_cum_prob(std::unordered_map<char, ull> &prob){
+  std::unordered_map<char, ull> cum_prob;
+  
   cum_prob[0] = 0;
-  for (int c = 1; c <= 127; ++c){
+
+  for (int c = 1; c < 128; ++c){
     cum_prob[(char)c] = cum_prob[c - 1] + prob[c - 1];
   }
+  
   return cum_prob;
 }
 
-std::pair<std::bitset<N>, int> encode(std::string msg, std::unordered_map<char, double> prob){
-  double min = 0, max = 1, w;
-  std::bitset<N> bin_repr;
-  int k = 0;
-  auto cum_prob = to_cum_prob(prob);
+ull round_div(ull a, ull b){
+  if (2 * (a % b) >= b){
+    return a / b + 1;
+  }
+  return a / b;
+}
 
-  msg += eof;
-  int s = 0;
+std::pair<std::bitset<N>, int> encode(std::string msg, std::unordered_map<char, ull> prob){
+  int k = 0;
+  ull min = 0, max = whole, s = 0, w;
+  std::bitset<N> bin_repr;
+  
+  bin_repr.reset();
+
+  auto cum_prob = to_cum_prob(prob);
 
   for (char l: msg){
     w = max - min;
-    max = min + w * (l < 127 ? cum_prob[l + 1] : 1);
-    min = min + w * cum_prob[l];
- 
-    while (max < 0.5 || min > 0.5){
-      if (max < 0.5){
-        min *= 2;
-        max *= 2;
+    max = min + w * cum_prob[l + 1] / R; // round_div(w * cum_prob[l + 1], R);
+    min = min + w * cum_prob[l] / R; // round_div(w * cum_prob[l], R);
+    
+    while (max < half || min > half){
+      if (max < half){
+        min = min << 1;
+        max = max << 1;
         
         bin_repr[k++] = 0;
         for (int i = 0; i < s; ++i){
@@ -44,10 +61,11 @@ std::pair<std::bitset<N>, int> encode(std::string msg, std::unordered_map<char, 
         }
         
         s = 0;
-      } 
-      else{
-        min = 2 * (min - 0.5);
-        max = 2 * (max - 0.5);
+      }
+
+      else if (min > half){
+        min = (min - half) << 1;
+        max = (max - half) << 1;
         
         bin_repr[k++] = 1;
         for (int i = 0; i < s; ++i){
@@ -58,16 +76,16 @@ std::pair<std::bitset<N>, int> encode(std::string msg, std::unordered_map<char, 
       }
     }
 
-    while (min > 0.25 && max < 0.75){
-      min = 2 * (min - 0.25);
-      max = 2 * (max - 0.25);
+    while (min > quart && max < 3 * quart){
+      min = (min - quart) << 1;
+      max = (max - quart) << 1;
       s++;
     }
   }
 
   s++;
 
-  if (min <= 0.25){
+  if (min <= quart){
     bin_repr[k++] = 0;
     for (int i = 0; i < s; ++i){
       bin_repr[k++] = 1;
@@ -83,60 +101,116 @@ std::pair<std::bitset<N>, int> encode(std::string msg, std::unordered_map<char, 
   return {bin_repr, k};
 }
 
-std::string decode(std::unordered_map<char, double> prob, std::bitset<N> data, int k){
-  double value;
-
-  for (int i = 1; i <= k; ++i){
-    value += 1.0 / (1 << i) * data[i - 1];
-  }
+std::string decode(std::unordered_map<char, ull> prob, std::bitset<N> data, int k){
+  int i = 0;
+  ull min = 0, max = whole, value = 0, w;
+  std::string ans = "";
 
   auto cum_prob = to_cum_prob(prob);
-  std::string ans = "";
-  bool fl = true;
-  // double low = 0, high = 1;
 
-  // for (int i = 0; i < 127; ++i) {
-  //   std::cout << i << " " << (char)i << " " << cum_prob[i] << "\n";
-  // }
-
-  std::cout << "value: " << value << "\n";
+  for (; i < prec - 1 && i < N && i < k; ++i){
+    if (data[i]){
+      value += ((ull)1)<<(prec - i - 2);
+    }
+  }
   
-  while (fl){
-    // double w = high - low;
-    for (int i = 0; i < 127; ++i){
-      //if (low + w * cum_prob[i] <= value &&  value < low + w * cum_prob[i + 1]){
-      if (cum_prob[i] <= value && value < cum_prob[i + 1]){
-        ans += (char) i;
-        // high = low + w * cum_prob[i + 1];
-        //low = low + w * cum_prob[i];
-        value = (value - cum_prob[i]) / prob[i];
+  while (1) {
+    for (int c = 0; c < 127; ++c){
+      w = max - min;
+      ull max_cur = min + w * cum_prob[c + 1] / R; // round_div(w * cum_prob[c + 1], R);
+      ull min_cur = min + w * cum_prob[c] / R; //round_div(w * cum_prob[c], R);
 
-        if (i == eof){
-          fl = false;
+      if (min_cur <= value && value < max_cur){
+        ans += (char) c;
+        min = min_cur;
+        max = max_cur;
+
+        if (c == eof){
+          return ans;
         }
+
         break;
       }
     }
-    // std::cout << value << " "; 
+
+    while (max < half || min > half){
+      if (max < half){
+        min = min << 1;
+        max = max << 1;
+        value = value << 1;
+      }
+      else if (min > half){
+        min = (min - half) << 1;
+        max = (max - half) << 1;
+        value = (value - half) << 1;
+      }
+
+      if (i < N && data[i]){
+        value++;
+      }
+      i++;
+    }
+
+    while (min > quart && max < 3 * quart){
+      min = (min - quart) << 1;
+      max = (max - quart) << 1;
+      value = (value - quart) << 1;
+
+      if (i < N && data[i]){
+        value++;
+      }
+      i++;
+    }
   }
-  // std::cout << "\n";
 
   return ans;
 }
 
-int main(){
-  std::unordered_map<char, double> test_prob;
-
-  for (char c = 'a'; c <= 'z'; ++c){
-    test_prob[c] = 0.9 / ('z' - 'a' + 1);
+int main(int argc, char **argv){
+  if (argc == 1){
+    std::cerr << "Mode not specified\n";
+    return 1;
   }
-  // test_prob['a'] = test_prob['b'] = 0.45;
-  test_prob[eof] = 0.05;
-  test_prob[' '] = 0.05;
+
+  if (argv[1] == "-e" || argv[1] == "--encode"){
+    std::string input_file = argv[2];
+    std::string output_file = argv[3];
+
+    std::ifstream in_stream;
+    in_stream.open(input_file, std::ios::in);
+
+    std::stringstream data;
+    data << in_stream.rdbuf();
+    data << eof;
+
+    in_stream.close();
+
+    auto str_data = data.str();
+
+    auto encoded_data = encode(std_data, prob);
+
+  }
+  else if (argv[1] == "-d" || argv[1] == "--decode"){
+
+  }
+  else{ 
+    std::cerr << "No such mode. Please select -e/--encode or -d/--decode.\n";
+    return 1;
+  }
+
+  std::unordered_map<char, ull> test_prob;
+
+  // for (char c = 'a'; c <= 'z'; ++c){
+  //   test_prob[c] = 0.9 / ('z' - 'a' + 1);
+  // }
+  test_prob['a'] = test_prob['b'] = (R - (R >> 7)) >> 1;
+  test_prob[eof] = R >> 7;
+  // test_prob[' '] = 0.05;
 
   std::string test_msg;
 
   std::cin >> test_msg;
+  test_msg += eof;
 
   auto ans = encode(test_msg, test_prob);
 
@@ -144,6 +218,7 @@ int main(){
     std::cout << ans.first[i];
   }
   std::cout << "\n";
+  std::fflush(stdout);
 
   auto dec_s = decode(test_prob, ans.first, ans.second);
 
