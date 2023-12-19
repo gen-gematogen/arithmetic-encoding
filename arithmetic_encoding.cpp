@@ -1,5 +1,4 @@
 #include <bitset>
-#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <ostream>
@@ -30,7 +29,7 @@ public:
 
   void add(bool v)
   {
-    if (!buf.size())
+    if (!w_bit)
     {
       buf.push_back(std::bitset<8>());
     }
@@ -38,12 +37,7 @@ public:
     buf[buf.size() - 1][w_bit] = v;
 
     w_bit++;
-
-    if (w_bit == 8)
-    {
-      buf.push_back(std::bitset<8>());
-      w_bit = 0;
-    }
+    w_bit %= 8;
   }
 
   std::vector<std::bitset<8>> get()
