@@ -11,8 +11,8 @@
 typedef unsigned long long ull;
 
 const static char eof = 'c';
-const static ull prec = 31;
-const static ull whole = 1 << (prec - 1);
+const static ull prec = 30;
+const static ull whole = 1 << prec;
 const static ull half = whole >> 1;
 const static ull quart = whole >> 2;
 const static ull R = 1 << 30;
@@ -106,7 +106,6 @@ ull round_div(ull a, ull b)
 
 data_buf encode(std::string msg, std::unordered_map<char, ull> prob)
 {
-  int k = 0;
   ull min = 0, max = whole, s = 0, w;
   data_buf buf;
 
@@ -187,11 +186,11 @@ std::string decode(data_buf data, std::unordered_map<char, ull> prob)
 
   auto cum_prob = to_cum_prob(prob);
 
-  for (; i < prec - 1 && i < N; ++i)
+  for (; i < prec && i < N; ++i)
   {
     if (data.next())
     {
-      value += ((ull)1) << (prec - i - 2);
+      value += ((ull)1) << (prec - i - 1);
     }
   }
 
@@ -211,7 +210,6 @@ std::string decode(data_buf data, std::unordered_map<char, ull> prob)
 
         if (c == eof)
         {
-          std::cout << N << " " << i << "\n";
           return ans;
         }
 
@@ -262,8 +260,8 @@ int main(int argc, char **argv)
 {
   std::unordered_map<char, ull> prob;
 
-  prob['a'] = prob['b'] = (R - (R >> 7)) >> 1;
-  prob[eof] = R >> 7;
+  prob['a'] = prob['b'] = (R - (R >> 3)) >> 1;
+  prob[eof] = R >> 3;
 
   if (argc == 1)
   {
