@@ -1,9 +1,47 @@
-eof = 'E'
+from tqdm import tqdm
+
+eof = chr(0)
 prec = 30
 whole = 1<<prec
 half = whole>>1
 quart = whole>>2
 R = 1<<30
+
+
+eng_alphabet = "abcdefghijklmnopqrstuvwxyz"
+digits = ""
+for i in range(1, 128):
+    if not chr(i).isalpha():
+        digits += chr(i)
+alphabet = eng_alphabet + eng_alphabet.upper() + digits + eof
+eng_freq = {
+    'a': 0.08167,
+    'b': 0.01492,
+    'c': 0.02782,
+    'd': 0.04253,
+    'e': 0.12702,
+    'f': 0.02228,
+    'g': 0.02015,
+    'h': 0.06094,
+    'i': 0.06966,
+    'j': 0.00153,
+    'k': 0.00772,
+    'l': 0.04025,
+    'm': 0.02406,
+    'n': 0.06749,
+    'o': 0.07507,
+    'p': 0.01929,
+    'q': 0.00095,
+    'r': 0.05987,
+    's': 0.06327,
+    't': 0.09056,
+    'u': 0.02758,
+    'v': 0.00978,
+    'w': 0.02360,
+    'x': 0.00150,
+    'y': 0.01974,
+    'z': 0.00074
+}
 
 class data_buf:
     def __init__(self):
@@ -65,10 +103,12 @@ def encode(msg, prob):
     
     cum_prob = to_cum_prob(prob)
     
-    for l in msg:
+    for l in tqdm(msg):
+        if l > 128:
+            raise Exception(f"Symbol {l=} not in alphabet")
         w = max - min
-        max = min + w * cum_prob[ord(l) + 1] // R
-        min = min + w * cum_prob[ord(l)] // R
+        max = min + w * cum_prob[l + 1] // R
+        min = min + w * cum_prob[l] // R
         
         while max < half or min > half:
             if max < half:
@@ -167,26 +207,58 @@ def decode(data, prob):
 def main():
     prob = dict()
                 
-    for c in range(ord('a'), ord('z')+1):
-        prob[c] = R >> 5;
-    prob[ord(eof)] = R - 26 * (R >> 5)
+    summ = 0
+    # 80% of frequency is english lovercase letters
+    for c in eng_alphabet:
+        cur = int(eng_freq[c] * R // 5 * 4)
+        prob[ord(c)] = cur
+        summ += cur
+    # 10% of frequency is english uppercase letters
+    for c in eng_alphabet.upper():
+        cur = int(eng_freq[c.lower()] * R // 10)
+        prob[ord(c)] = cur
+        summ += cur        
+    # almost 10% of frequency is digits
+    for c in digits:
+        cur = int(R // (11 * len(digits)))
+        prob[ord(c)] = cur
+        summ += cur
+        
+    prob[ord(eof)] = R - summ
     
-    with open("input.txt", "r") as f:
+    with open("input_ascii.txt", "rb") as f:
         s = f.read()
-    s += eof
     
     print("Started encoding")
+    print("Input size:", len(s))
     
-    res = encode(s, prob)
+    res = encode(s + eof.encode(), prob)
     
     print("Finished encoding")
+    
+    with open("output.bin", "wb") as f:
+        f.write(bytes(res.get()))
+    
     print("Started decoding")
     
     s2 = decode(res, prob)
+    s2 = s2[:-1]
     
     print("Finished decoding")
+    print("Output size:", len(s2))
     
-    print(s, s2, s == s2)
+    if len(s) != len(s2):
+        print("Lengths are not equal")
+        return
+    print("Lengths are equal, checking for differences")
+    for i in range(len(s)):
+        if s[i] != ord(s2[i]):
+            print(i, s[i], ord(s2[i]))
+            raise Exception("Strings are not equal")
+    print("Strings are equal!")
+    
+    with open("output_ascii.txt", "wb") as f:
+        f.write(s2.encode())
     
 if __name__ == '__main__':
     main()
