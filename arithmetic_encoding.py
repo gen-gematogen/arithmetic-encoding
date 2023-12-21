@@ -1,7 +1,8 @@
 from tqdm import tqdm
+import argparse
 import json
 
-eof = chr(0)
+eof = 0
 prec = 30
 whole = 1<<prec
 half = whole>>1
@@ -32,7 +33,10 @@ class data_buf:
     
     def append(self, ch):
         self.buf.append(ch)
-        
+       
+    def insert(self, s):
+        self.buf = s
+
     def next(self):
         if self.r_len >= len(self.buf):
             return 0
@@ -48,7 +52,19 @@ class data_buf:
     
     def reset_read(self):
         self.r_bit = self.r_len = 0
-        
+
+def rescale_prob(symb_weights):
+    prob = dict()
+    weight_sum = sum(symb_weights.values())
+    cur_sum = 0
+
+    for i in range(128):
+        prob[i] =  symb_weights[i] * R // weight_sum
+        cur_sum += prob[i]
+    prob[eof] += R - cur_sum
+
+    return prob
+
 def to_cum_prob(prob):
     cum_prob = dict()
     
@@ -60,6 +76,7 @@ def to_cum_prob(prob):
     return cum_prob
 
 def encode(msg, prob):
+    global symb_weights
     min = 0
     max = whole
     s = 0
@@ -100,6 +117,10 @@ def encode(msg, prob):
             min = (min - quart)<<1
             max = (max - quart)<<1
             s += 1
+
+        if args.mode == 'dynamic':
+            symb_weights[l] += 1 
+            prob = rescale_prob(symb_weights)
             
     s += 1
     
@@ -118,6 +139,7 @@ def encode(msg, prob):
     return buf
 
 def decode(data, prob):
+    global symb_weights
     min = 0
     max = whole
     value = 0
@@ -140,9 +162,13 @@ def decode(data, prob):
                 min = min_cur
                 max = max_cur
                 
-                if c == ord(eof):
+                if c == eof:
                     return ans
-                
+        
+                if args.mode == 'dynamic':
+                    symb_weights[c] += 1 
+                    prob = rescale_prob(symb_weights)
+
                 break
             
         while max < half or min > half:
@@ -170,47 +196,67 @@ def decode(data, prob):
     return ans
 
 def main():
-    with open('prob.cfg', 'r') as in_f:
-        cfg = in_f.read()
-    cfg = json.loads(cfg)
-    
-    prob = dict()
-    for i in cfg:
-        prob[int(i)] = cfg[i]
+    global args, symb_weights
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-e', '--encode', action = 'store_const', const = True)
+    group.add_argument('-d', '--decode', action = 'store_const', const = True)
+    parser.add_argument('-m', '--mode', choices = ['static', 'dynamic'])
+    parser.add_argument(nargs = 1, dest = 'in_f', metavar = 'Input_name', help = 'Enter name of input file')
+    parser.add_argument(nargs = 1, dest = 'out_f', metavar = 'Output_name', help = 'Enter name of output file')
 
-    with open("input_ascii.txt", "rb") as f:
-        s = f.read()
+    args = parser.parse_args()
+
+    prob = dict()
+    if args.mode == 'dynamic':
+        symb_weights = dict()
+        for i in range(128):
+            symb_weights[i] = 1 
+        prob = rescale_prob(symb_weights)
+    else:
+        with open('prob.cfg', 'r') as in_f:
+            cfg = in_f.read()
+        cfg = json.loads(cfg)
+        
+        for i in cfg:
+            prob[int(i)] = cfg[i]
+
+    if args.encode:
+        with open(args.in_f[0], "rb") as f:
+            s = f.read()
     
-    print("Started encoding")
-    print("Input size:", len(s))
+        print("Started encoding")
+        print("Input size:", len(s))
     
-    res = encode(s + eof.encode(), prob)
+        res = encode(s + eof.to_bytes(1), prob)
     
-    print("Finished encoding")
+        print("Finished encoding")
+        print("Writing data to the file")
+
+        with open(args.out_f[0], "wb") as f:
+            f.write(bytes(res.get()))
+
+        print("Done!")
     
-    with open("output.bin", "wb") as f:
-        f.write(bytes(res.get()))
+    elif args.decode:
+        with open(args.in_f[0], "rb") as f:
+            s = f.read()
+        
+        print("Started decoding")
+  
+        buf = data_buf()
+        buf.insert(s)
+
+        res = decode(buf, prob)[:-1]
     
-    print("Started decoding")
-    
-    s2 = decode(res, prob)
-    s2 = s2[:-1]
-    
-    print("Finished decoding")
-    print("Output size:", len(s2))
-    
-    if len(s) != len(s2):
-        print("Lengths are not equal")
-        return
-    print("Lengths are equal, checking for differences")
-    for i in range(len(s)):
-        if s[i] != ord(s2[i]):
-            print(i, s[i], ord(s2[i]))
-            raise Exception("Strings are not equal")
-    print("Strings are equal!")
-    
-    with open("output_ascii.txt", "wb") as f:
-        f.write(s2.encode())
-    
+        print("Finished decoding")
+        print("Output size:", len(res))
+        print("Writing data to the file")
+
+        with open(args.out_f[0], 'w') as f:
+            f.write(res)
+
+        print("Done!")
+        
 if __name__ == '__main__':
     main()
