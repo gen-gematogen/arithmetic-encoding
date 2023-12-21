@@ -1,4 +1,5 @@
 from tqdm import tqdm
+import json
 
 eof = chr(0)
 prec = 30
@@ -6,42 +7,6 @@ whole = 1<<prec
 half = whole>>1
 quart = whole>>2
 R = 1<<30
-
-
-eng_alphabet = "abcdefghijklmnopqrstuvwxyz"
-digits = ""
-for i in range(1, 128):
-    if not chr(i).isalpha():
-        digits += chr(i)
-alphabet = eng_alphabet + eng_alphabet.upper() + digits + eof
-eng_freq = {
-    'a': 0.08167,
-    'b': 0.01492,
-    'c': 0.02782,
-    'd': 0.04253,
-    'e': 0.12702,
-    'f': 0.02228,
-    'g': 0.02015,
-    'h': 0.06094,
-    'i': 0.06966,
-    'j': 0.00153,
-    'k': 0.00772,
-    'l': 0.04025,
-    'm': 0.02406,
-    'n': 0.06749,
-    'o': 0.07507,
-    'p': 0.01929,
-    'q': 0.00095,
-    'r': 0.05987,
-    's': 0.06327,
-    't': 0.09056,
-    'u': 0.02758,
-    'v': 0.00978,
-    'w': 0.02360,
-    'x': 0.00150,
-    'y': 0.01974,
-    'z': 0.00074
-}
 
 class data_buf:
     def __init__(self):
@@ -102,9 +67,9 @@ def encode(msg, prob):
     buf = data_buf()
     
     cum_prob = to_cum_prob(prob)
-    
+   
     for l in tqdm(msg):
-        if l > 128:
+        if l >= 128:
             raise Exception(f"Symbol {l=} not in alphabet")
         w = max - min
         max = min + w * cum_prob[l + 1] // R
@@ -149,7 +114,7 @@ def encode(msg, prob):
         
         for i in range(s):
             buf.add(0)
-            
+
     return buf
 
 def decode(data, prob):
@@ -205,27 +170,14 @@ def decode(data, prob):
     return ans
 
 def main():
-    prob = dict()
-                
-    summ = 0
-    # 80% of frequency is english lovercase letters
-    for c in eng_alphabet:
-        cur = int(eng_freq[c] * R // 5 * 4)
-        prob[ord(c)] = cur
-        summ += cur
-    # 10% of frequency is english uppercase letters
-    for c in eng_alphabet.upper():
-        cur = int(eng_freq[c.lower()] * R // 10)
-        prob[ord(c)] = cur
-        summ += cur        
-    # almost 10% of frequency is digits
-    for c in digits:
-        cur = int(R // (11 * len(digits)))
-        prob[ord(c)] = cur
-        summ += cur
-        
-    prob[ord(eof)] = R - summ
+    with open('prob.cfg', 'r') as in_f:
+        cfg = in_f.read()
+    cfg = json.loads(cfg)
     
+    prob = dict()
+    for i in cfg:
+        prob[int(i)] = cfg[i]
+
     with open("input_ascii.txt", "rb") as f:
         s = f.read()
     
