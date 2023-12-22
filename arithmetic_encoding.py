@@ -75,6 +75,20 @@ def to_cum_prob(prob):
         
     return cum_prob
 
+def to_dynamic_cum_prob(prob):
+    cum_prob = dict()
+    for i in range(128):
+        cum_prob[i] = dict()
+        for j in range(128):
+            cum_prob[i][j] = dict()
+            for k in range(128):
+                if k > 0:
+                    cum_prob[i][j][k] = cum_prob[i][j][k - 1] + prob[i][j][k - 1]
+                else:
+                    cum_prob[i][j][k] = 0
+
+    return cum_prob
+
 def encode(msg, prob):
     global symb_weights
     min = 0
@@ -84,13 +98,24 @@ def encode(msg, prob):
     buf = data_buf()
     
     cum_prob = to_cum_prob(prob)
+    if args.mode == 'static':
+        dynamic_cum_prob = to_dynamic_cum_prob(dynamic_prob)
+    prev = None 
+    prev_prev = None
    
     for l in tqdm(msg):
         if l >= 128:
             raise Exception(f"Symbol {l=} not in alphabet")
-        w = max - min
-        max = min + w * cum_prob[l + 1] // R
-        min = min + w * cum_prob[l] // R
+
+        if args.mode == 'static' and prev_prev and prev:
+            w = max - min 
+            max = min + w * dynamic_cum_prob[prev_prev][prev][l + 1] // R
+            min = min + w * dynamic_cum_prob[prev_prev][prev][l] // R
+
+        else:
+            w = max - min
+            max = min + w * cum_prob[l + 1] // R
+            min = min + w * cum_prob[l] // R
         
         while max < half or min > half:
             if max < half:
@@ -121,7 +146,9 @@ def encode(msg, prob):
         if args.mode == 'dynamic':
             symb_weights[l] += 1 
             prob = rescale_prob(symb_weights)
-            
+        
+        prev_prev = prev
+        prev = l
     s += 1
     
     if min <= quart:
@@ -146,6 +173,10 @@ def decode(data, prob):
     ans = ""
     
     cum_prob = to_cum_prob(prob)
+    if args.mode == 'static':
+        dynamic_cum_prob = to_dynamic_cum_prob(dynamic_prob)
+    prev = None 
+    prev_prev = None
     
     for i in range(prec):
         if (data.next()):
@@ -153,21 +184,29 @@ def decode(data, prob):
             
     while True:
         for c in range(127):
-            w = max - min
-            max_cur = min + w * cum_prob[c + 1] // R
-            min_cur = min + w * cum_prob[c] // R 
+            if args.mode == 'static' and prev and prev_prev:
+                w = max - min
+                max_cur = min + w * dynamic_cum_prob[prev_prev][prev][c + 1] // R 
+                min_cur = min + w * dynamic_cum_prob[prev_prev][prev][c] // R 
+            else:
+                w = max - min
+                max_cur = min + w * cum_prob[c + 1] // R
+                min_cur = min + w * cum_prob[c] // R 
             
             if min_cur <= value and value < max_cur:
                 ans += chr(c)
                 min = min_cur
                 max = max_cur
-                
+
                 if c == eof:
                     return ans
         
                 if args.mode == 'dynamic':
                     symb_weights[c] += 1 
                     prob = rescale_prob(symb_weights)
+
+                prev_prev = prev
+                prev = c 
 
                 break
             
@@ -196,7 +235,7 @@ def decode(data, prob):
     return ans
 
 def main():
-    global args, symb_weights
+    global args, symb_weights, dynamic_prob
     parser = argparse.ArgumentParser(description='Process some integers.')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-e', '--encode', action = 'store_const', const = True)
@@ -214,12 +253,27 @@ def main():
             symb_weights[i] = 1 
         prob = rescale_prob(symb_weights)
     else:
+        args.mode = 'static'
         with open('prob.cfg', 'r') as in_f:
             cfg = in_f.read()
         cfg = json.loads(cfg)
         
         for i in cfg:
             prob[int(i)] = cfg[i]
+
+        
+        with open('dynamic_precount.cfg', 'r') as in_f:
+            cfg = in_f.read()
+        cfg = json.loads(cfg)
+
+        dynamic_prob = dict()
+
+        for i in cfg:
+            dynamic_prob[int(i)] = dict()
+            for j in cfg[i]:
+                dynamic_prob[int(i)][int(j)] = dict()
+                for k in cfg[i][j]:
+                    dynamic_prob[int(i)][int(j)][int(k)] = cfg[i][j][k]
 
     if args.encode:
         with open(args.in_f[0], "rb") as f:
